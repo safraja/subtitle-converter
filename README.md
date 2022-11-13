@@ -1,5 +1,5 @@
 # Subtitle Convertor
-Light (<50kB) and dependency-free javascript library for converting subtitles between different subtitle formats.
+Light (<50kB) and dependency-free javascript library for converting subtitles between different formats.
 
 ## Installation and Usage
 Download the file subtitleConverter.js and import its class.
