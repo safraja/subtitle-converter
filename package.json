@@ -1,0 +1,14 @@
+{
+  "name": "ass-to-srt",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "Haikner",
+  "license": "MIT",
+  "scripts": {
+    "main": "node index.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "nodemon": "^2.0.19"
+  }
+}
