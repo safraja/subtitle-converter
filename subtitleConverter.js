@@ -1,3 +1,11 @@
+/**
+ * Hai Form (https://github.com/safraja/hai-form) - Javascript library for converting
+ * subtitles between different subtitle formats.
+ * Copyright (c) 2022 Jakub Šafránek All Rights Reserved
+ * @license MIT Licensed
+ */
+
+
 /** Subtitle converter from one format to another (currently only supports conversion from ASS to SRT). */
 class SubtitleConvertor
 {
