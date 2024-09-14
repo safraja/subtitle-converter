@@ -1,14 +1,34 @@
 {
-  "name": "ass-to-srt",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "subtitle-converter",
+  "version": "1.1.0",
+  "main": "subtitleConverter.js",
+  "description": "Light (<50kB) and dependency-free javascript library for converting subtitles between different formats.",
   "author": "Haikner",
   "license": "MIT",
   "scripts": {
-    "main": "node index.js"
+    "convert": "node examples/convert.js",
+    "c-ass": "node examples/convert.js",
+    "c-ass-srt": "node examples/convert.js --from=ass",
+    "c-ass-vtt": "node examples/convert.js --from=ass --to=vtt",
+    "c-vtt": "node examples/convert.js --from=vtt",
+    "c-srt": "node examples/convert.js --from=srt"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/safraja/subtitle-converter.git"
   },
   "type": "module",
-  "dependencies": {
+  "keywords": [
+    "subtitles",
+    "ass-subtitles",
+    "srt-subtitles",
+    "ass-to-srt",
+    "conversion",
+    "vanilla",
+    "plugin",
+    "js"
+  ],
+  "dev-dependencies": {
     "nodemon": "^2.0.19"
   }
 }

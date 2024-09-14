@@ -6,7 +6,7 @@
  */
 
 
-/** Subtitle converter from one format to another (currently only supports conversion from ASS to SRT). */
+/** Subtitle converter from one format to another. */
 class SubtitleConvertor
 {
     /** @type {string} - Text to convert.*/
@@ -243,6 +243,11 @@ class SubtitleConvertor
                     continue;   // If all text was stripped, continue with next loop.
                 }
 
+                // If there are multiple consecutive line breaks, replace them with one.
+                text = text.replace(/(\r\n|\r|\n)\s+/g, '\r\n');
+
+                text = text.trim();
+
                 parsedLines.push([startMs, endMs, start, end, text, dialogLineParts[stylePartIndex], lineStyle]);
             }
         }
@@ -379,6 +384,292 @@ class SubtitleConvertor
         return this.convertedText;
     }
 
+
+    /**
+     * Converts subtitles from VTT to SRT format.
+     *
+     * @returns {string} - Subtitles in SRT format.
+     */
+    convertFromVtt()
+    {
+        this.convertedText = '';
+
+        let lines = this.subtitleText.split(/\r?\n/);
+        let activeNote = false;
+        let activeStyle = false;
+        let activeRegion = false;
+        let activeCue = false;
+        let cueData = {payload: [], start: null, startMs: null, end: null, endMs: null};
+        let parsedLines = [];
+
+        for(let line of [...lines, ''])
+        {
+            if(line === '')
+            {   // End of section or cue.
+                if(activeCue === true)
+                {
+                    let text = cueData.payload.join('\r\n')
+                    // Remove description text for kanji characters.
+                    text = text.replace( /<rt.*?>.*?<\/rt>/g, '');
+                    // Remove all but supported tags (b/i/u/font).
+                    text = text.replace(/<(?!b)(?!i)(?!u)(?!font)(?!\/b)(?!\/i)(?!\/u)(?!\/font).*?>/g, '');
+                    cueData.payload = text;
+                    parsedLines.push(cueData);
+                    cueData = {payload: [], start: null, startMs: null, end: null, endMs: null};
+                }
+
+                activeNote = false;
+                activeStyle = false;
+                activeRegion = false;
+                activeCue = false;
+                continue;
+            }
+
+            if(activeNote || activeStyle || activeRegion)
+            {   // SRT does not support comments, region or style, so skip them.
+                continue;
+            }
+
+            if(activeCue)
+            {
+                cueData.payload.push(line);
+                continue;
+            }
+
+            if(line.toLowerCase().startsWith('note'))
+            {
+                activeNote = true;
+                continue;
+            }
+
+            if(line.toLowerCase().startsWith('style'))
+            {
+                activeStyle = true;
+                continue;
+            }
+
+            if(line.toLowerCase().startsWith('region'))
+            {
+                activeRegion = true;
+                continue;
+            }
+
+            let matchResult = line.match(/^(\d{2,}:)?\d{2}:\d{2}\.\d{3} --> (\d{2,}:)?\d{2}:\d{2}\.\d{3}/);
+
+            if(matchResult !== null)
+            {   // Check if line starts with cue timing (like 00:00:22.230 --> 00:00:24.606).
+                activeCue = true;
+                let timingParts = matchResult[0].split(' --> ');
+                cueData.start = this.convertVttTime(timingParts[0].trim());
+                cueData.startMs = this.convertSrtTimeToMs(cueData.start);
+                cueData.end = this.convertVttTime(timingParts[1].trim());
+                cueData.endMs = this.convertSrtTimeToMs(cueData.end);
+            }
+        }
+
+        let sortFunc = (a, b) =>
+        {
+            if (a.startMs === b.startMs)
+            {
+                return 0;
+            }
+            else
+            {
+                return (a.startMs < b.startMs) ? -1 : 1;
+            }
+        }
+
+        parsedLines.sort(sortFunc);     // Sort the translation lines by their start time.
+
+        let dialogLineIndex = 1;
+        let lastLine = parsedLines.shift();
+
+        for(let line of parsedLines)
+        {   //[startMs, endMs, start, end, text, dialogLineParts[stylePartIndex], lineStyle]
+            if(lastLine.endMs >= line.startMs)
+            {   // If the previous line of subtitles ended after (or at the same time) this one began.
+                if(lastLine.payload === line.payload)
+                {   // If two consecutive lines have the same text, join them.
+                    lastLine.endMs = line.endMs;
+                    lastLine.end = line.end;
+                    continue;
+                }
+
+                if(lastLine.endMs > line.startMs)
+                {   // If the previous line of subtitles ended later than this one began, create
+                    // a new line with the contents of both overlapping lines.
+                    if(line.startMs - lastLine.startMs > this.minDuration)
+                    {   // If the duration of the line is not too short, insert it.
+                        this.addTextLine(dialogLineIndex, lastLine.start, line.end, lastLine.payload);
+                        dialogLineIndex++;
+                    }
+
+                    let text = lastLine.payload + '\r\n' + line.payload;
+
+                    if(lastLine.startMs - line.startMs > this.minDuration)
+                    {   // If the duration of the line is not too short, insert it.
+                        this.addTextLine(dialogLineIndex, line.start, lastLine.end, text);
+                        dialogLineIndex++;
+                    }
+
+                    lastLine.startMs = lastLine.endMs;
+                    lastLine.endMs = line.endMs;
+                    lastLine.start = lastLine.end
+                    lastLine.end = line.end;
+                    lastLine.payload = line.payload;
+
+                    continue;
+                }
+            }
+
+            if(lastLine.endMs - lastLine.startMs > this.minDuration)
+            {   // If the duration of the line was not too short, insert it.
+                this.addTextLine(dialogLineIndex, lastLine.start, lastLine.end, lastLine.payload);
+                dialogLineIndex++;
+            }
+            lastLine = line;
+        }
+
+        if(lastLine !== undefined && lastLine.endMs - lastLine.startMs > this.minDuration)
+        {
+            this.addTextLine(dialogLineIndex, lastLine.start, lastLine.end, lastLine.payload);
+            dialogLineIndex++;
+        }
+
+        this.convertedText = this.convertedText.trim() + '\r\n';
+
+        return this.convertedText;
+    }
+
+
+    /**
+     * Converts subtitles from SRT to VTT format.
+     *
+     * @returns {string} - Subtitles in VTT format.
+     */
+    convertFromSrt()
+    {
+        this.convertedText = 'WEBVTT\r\n\r\n';
+
+        this.convertedText += `STYLE\r\n`;
+        this.convertedText +=
+            `::cue{\r\ncolor: white;\r\nbackground-color: transparent;` +
+            `\r\nwhite-space: normal;` +
+            `\r\ntext-shadow: 0 0 1px black, 1px 1px 0 black;\r\n}\r\n\r\n`; // Set default style.
+
+        let lines = this.subtitleText.split(/\r?\n/);
+        let activeCue = false;
+        let cueData = {payload: [], start: null, startMs: null, end: null, endMs: null};
+        let parsedLines = [];
+
+        for(let line of lines)
+        {
+            if(line === '')
+            {   // End of section or cue.
+                if(activeCue === true)
+                {
+                    cueData.payload  = cueData.payload.join('\r\n');
+                    parsedLines.push(cueData);
+                    cueData = {payload: [], start: null, startMs: null, end: null, endMs: null};
+                }
+
+                activeCue = false;
+                continue;
+            }
+
+            if(activeCue)
+            {
+                cueData.payload.push(line);
+                continue;
+            }
+
+            let matchResult = line.match(/^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}/);
+
+            if(matchResult !== null)
+            {   // Check if line starts with cue timing (like 00:00:22,230 --> 00:00:24,606).
+                activeCue = true;
+                let timingParts = matchResult[0].split(' --> ');
+                cueData.start = this.convertSrtTime(timingParts[0].trim());
+                cueData.startMs = this.convertSrtTimeToMs(timingParts[0].trim());
+                cueData.end = this.convertSrtTime(timingParts[1].trim());
+                cueData.endMs = this.convertSrtTimeToMs(timingParts[1].trim());
+            }
+        }
+
+        let sortFunc = (a, b) =>
+        {
+            if (a.startMs === b.startMs)
+            {
+                return 0;
+            }
+            else
+            {
+                return (a.startMs < b.startMs) ? -1 : 1;
+            }
+        }
+
+        parsedLines.sort(sortFunc);     // Sort the translation lines by their start time.
+
+        let dialogLineIndex = 1;
+        let lastLine = parsedLines.shift();
+
+        for(let line of parsedLines)
+        {   //[startMs, endMs, start, end, text, dialogLineParts[stylePartIndex], lineStyle]
+            if(lastLine.endMs >= line.startMs)
+            {   // If the previous line of subtitles ended after (or at the same time) this one began.
+                if(lastLine.payload === line.payload)
+                {   // If two consecutive lines have the same text, join them.
+                    lastLine.endMs = line.endMs;
+                    lastLine.end = line.end;
+                    continue;
+                }
+
+                if(lastLine.endMs > line.startMs)
+                {   // If the previous line of subtitles ended later than this one began, create
+                    // a new line with the contents of both overlapping lines.
+                    if(line.startMs - lastLine.startMs > this.minDuration)
+                    {   // If the duration of the line is not too short, insert it.
+                        this.addTextLineVtt(dialogLineIndex, lastLine.start, line.end, lastLine.payload, null);
+                        dialogLineIndex++;
+                    }
+
+                    let text = lastLine.payload + '\r\n' + line.payload;
+
+                    if(lastLine.startMs - line.startMs > this.minDuration)
+                    {   // If the duration of the line is not too short, insert it.
+                        this.addTextLineVtt(dialogLineIndex, line.start, lastLine.end, text, null);
+                        dialogLineIndex++;
+                    }
+
+                    lastLine.startMs = lastLine.endMs;
+                    lastLine.endMs = line.endMs;
+                    lastLine.start = lastLine.end
+                    lastLine.end = line.end;
+                    lastLine.payload = line.payload;
+
+                    continue;
+                }
+            }
+
+            if(lastLine.endMs - lastLine.startMs > this.minDuration)
+            {   // If the duration of the line was not too short, insert it.
+                this.addTextLineVtt(dialogLineIndex, lastLine.start, lastLine.end, lastLine.payload, null);
+                dialogLineIndex++;
+            }
+            lastLine = line;
+        }
+
+        if(lastLine !== undefined && lastLine.endMs - lastLine.startMs > this.minDuration)
+        {
+            this.addTextLineVtt(dialogLineIndex, lastLine.start, lastLine.end, lastLine.payload, null);
+            dialogLineIndex++;
+        }
+
+        this.convertedText = this.convertedText.trim() + '\r\n';
+
+        return this.convertedText;
+    }
+
     /**
      * Adds a subtitle line in SRT format.
      *
@@ -386,13 +677,20 @@ class SubtitleConvertor
      * @param {string} start - Start time of the subtitle line.
      * @param {string} end - End state of the subtitle line.
      * @param {string} text - Line text.
-     * @param {string} speaker - Speaker (used to determine the style of the translation line).
+     * @param {string|null} speaker - Speaker (used to determine the style of the translation line).
      */
     addTextLineVtt(index, start, end, text, speaker )
     {
         this.convertedText += `x${index}\r\n`;
         this.convertedText += `${start} --> ${end} line:90%\r\n`;
-        this.convertedText += `<v ${speaker}>${text}\r\n\r\n`;
+        if(speaker === null)
+        {
+            this.convertedText += `${text}\r\n\r\n`;
+        }
+        else
+        {
+            this.convertedText += `<v ${speaker}>${text}\r\n\r\n`;
+        }
     }
     
 
@@ -432,6 +730,45 @@ class SubtitleConvertor
         }
 
         return `0${timeParts[0]}:${timeParts[1]}:${seconds},${milliseconds}`;
+    }
+
+    /**
+     * Converts time from SRT format to VTT.
+     *
+     * @param {string} time - Time to be converted.
+     * @returns {string} - Converted time.
+     */
+    convertSrtTime(time)
+    {
+        return time.replace(',', '.');
+    }
+
+    /**
+     * Converts time from VTT format to SRT.
+     *
+     * @param {string} time - Time to be converted.
+     * @returns {string} - Converted time.
+     */
+    convertVttTime(time)
+    {
+        time = time.replace('.', ',');
+        let timeParts = time.split(':');
+
+        if (timeParts.length === 2)
+        {   // Short time format (mm:ss.ttt)
+            return `00:${time}`;
+        }
+
+        let hours = Number(timeParts[0]);
+
+        if (hours < 10)
+        {
+            return `0${hours}:${timeParts[1]}:${timeParts[2]}`;
+        }
+
+        hours = Math.min( hours, 99);   // SRT does not support more than 99 hours, but that is hardly a practical problem.
+
+        return `${hours}:${timeParts[1]}:${timeParts[2]}`;
     }
 
     /**
@@ -743,6 +1080,25 @@ class SubtitleConvertor
         let hours = parseInt(timeParts[0]);
         const seconds = parseInt(secondsParts[0]);
         let milliseconds = parseInt(secondsParts[1]) * 10;
+        milliseconds += seconds * 1000 + minutes * 60 * 1000 + hours * 60 * 60 * 1000;
+
+        return milliseconds;
+    }
+
+    /**
+     * Converts time from SRT format to milliseconds.
+     *
+     * @param {string} time - Time to be converted.
+     * @returns {number} - Time in milliseconds.
+     */
+    convertSrtTimeToMs(time)
+    {
+        let timeParts = time.split(':');
+        let secondsParts = timeParts[2].split(',');
+        let hours = parseInt(timeParts[0]);
+        let minutes = parseInt(timeParts[1]);
+        const seconds = parseInt(secondsParts[0]);
+        let milliseconds = parseInt(secondsParts[1]);
         milliseconds += seconds * 1000 + minutes * 60 * 1000 + hours * 60 * 60 * 1000;
 
         return milliseconds;

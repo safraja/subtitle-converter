@@ -21,14 +21,20 @@ property. Then just call a conversion function you want and set the output forma
 </script>
 ```
 
-Currently, it is only possible to convert from ASS format to SRT and WebVTT formats. In the future there may be a 
-possibility to convert between SRT and WebVTT, conversion from SRT/WebVTT to ASS is not planned.
+Currently, there are 3 convert functions:
+```js
+convertFromAss(srtOrVtt); // Converts ASS format to SRT OR WebVTT
+convertFromVtt(); // Converts WebTT format to SRT
+convertFromSrt(); // Converts SRT format to WebTT
+```
+
+You can't choose output format when converting from SRT or WebVTT.
 
 There are a few parameters that can be used to influence the conversion process.
 
 ### Parameters affecting conversion from ASS to SRT or WebVTT 
 
-| Parameter            | Type (default) | Description                                                                                                                                                                                            |
+| Parameter            | Type (default) | Description                                                                                                                                                                                              |
 |----------------------|----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | stripAssControlCodes | boolean (true) | Indicates if ASS control codes should be removed (they are not part of SRT/VTT standard, but some players support them).                                                                                 |
 | convertCodesToTags   | boolean (true) | Indicates whether ASS control codes that have an equivalent in SRT/VTT (namely B, I and U) should be converted to tags. (This option has effect only if stripAssControlCodes === true.)                  |
@@ -38,7 +44,7 @@ There are a few parameters that can be used to influence the conversion process.
 
 ### Parameters affecting conversion from ASS to WebVTT
 
-| Parameter            | Type (default) | Description                                                                                                                                                                                                    |
+| Parameter            | Type (default) | Description                                                                                                                                                                                                      |
 |----------------------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | forceContrastOutline | boolean (true) | Indicates whether (regardless of subtitle styles) a contrasting text border should be enforced. (Due to some limitations of the WebVTT format, this is highly recommended for the sake of subtitle readability.) |
 ---
